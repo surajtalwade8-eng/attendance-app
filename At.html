@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>🏭 Upla Factory Attendance</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body { font-family: Arial; padding: 20px; text-align: center; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; max-width: 400px; margin: auto; }
+        input { width: 90%; padding: 12px; margin: 10px; border: none; border-radius: 8px; font-size: 16px; box-sizing: border-box; }
+        button { background: #00b894; color: white; padding: 15px 20px; border: none; border-radius: 10px; font-size: 16px; width: 45%; margin: 8px; cursor: pointer; box-shadow: 0 4px 8px rgba(0,0,0,0.2); }
+        button:active { transform: scale(0.98); }
+        button:disabled { background: #95a5a6; cursor: not-allowed; }
+        #status { font-size: 16px; margin: 15px; padding: 12px; background: rgba(255,255,255,0.2); border-radius: 8px; min-height: 20px; }
+        .gps-info { font-size: 14px; margin-top: 10px; color: #ffeaa7; }
+        .error { background: #e17055 !important; color: white !important; }
+        .success { background: #00b894 !important; }
+    </style>
+</head>
+<body>
+    <h2>🏭 Upla Factory Attendance</h2>
+    <p><strong>15 GPS Staff | 62HV+XVJ</strong></p>
+    
+    <input id="workerName" placeholder="Worker ka Naam" required>
+    <input id="contactNo" type="tel" placeholder="Mobile Number (10 digits)" maxlength="10" required>
+    
+    <br><br>
+    <button id="checkinBtn" onclick="markAttendance('IN')">✅ Check In</button>
+    <button id="checkoutBtn" onclick="markAttendance('OUT')">❌ Check Out</button>
+    
+    <div id="status">GPS Permission allow karo...</div>
+    <div class="gps-info" id="gpsInfo">📍 Factory GPS check hoga (500m radius)</div>
+
+    <script>
+        const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyAG4VWOmDGO98iNvTyQiLCpHOkHHFAztwWf58hQ5-8F4fqS7s8q9ZghkqcUmisso4/exec";
+        const FACTORY_LAT = 18.229972;
+        const FACTORY_LNG = 76.044639;
+        const GEOFENCE_RADIUS = 500;
+
+        // Better GPS handling
+        let locationWatch = null;
+
+        function getDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371e3;
+            const φ1 = lat1 * Math.PI / 180;
+            const φ2 = lat2 * Math.PI / 180;
+            const Δφ = (lat2 - lat1) * Math.PI / 180;
+            const Δλ = (lon2 - lon1) * Math.PI / 180;
+            const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            return R * c;
+        }
+
+        async function markAttendance(type) {
+            const name = document.getElementById('workerName').value.trim();
+            const contact = document.getElementById('contactNo').value.trim();
+            
+            if (!name || !contact || contact.length !== 10) {
+                alert('❌ Naam aur 10-digit number sahi daalo!');
+                return;
+            }
+
+            const statusEl = document.getElementById('status');
+            statusEl.innerHTML = '📍 GPS dhund raha hai...';
+            statusEl.className = '';
+
+            try {
+                // High accuracy GPS with better options
+                const pos = await new Promise((resolve, reject) => {
+                    navigator.geolocation.getCurrentPosition(resolve, reject, {
+                        enableHighAccuracy: true,
+                        timeout: 15000,
+                        maximumAge: 30000
+                    });
+                });
+
+                const distance = getDistance(pos.coords.latitude, pos.coords.longitude, FACTORY_LAT, FACTORY_LNG);
+                document.getElementById('gpsInfo').innerText = `📍 ${Math.round(distance)}m factory se`;
+
+                if (distance > GEOFENCE_RADIUS) {
+                    statusEl.innerHTML = `❌ Factory se ${Math.round(distance)}m door ho!<br>500m radius ke andar aao.`;
+                    statusEl.className = 'error';
+                    return;
+                }
+
+                statusEl.innerHTML = '📤 Google Sheet save kar raha...';
+                
+                // POST to your Google Script
+                const response = await fetch(GOOGLE_SCRIPT_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: name,
+                        contact: contact,
+                        type: type,
+                        lat: pos.coords.latitude,
+                        lng: pos.coords.longitude
+                    })
+                });
+
+                const result = await response.json();
+                
+                if (result.status === 'success') {
+                    statusEl.innerHTML = `✅ ${type} successful!<br>Google Sheet mein live dikhega.`;
+                    statusEl.className = 'success';
+                    document.getElementById('workerName').value = '';
+                    document.getElementById('contactNo').value = '';
+                } else {
+                    throw new Error(result.message || 'Unknown error');
+                }
+
+            } catch (err) {
+                console.error(err);
+                statusEl.innerHTML = `❌ Error: ${err.message}<br>Internet/GPS check karo ya page refresh karo.`;
+                statusEl.className = 'error';
+            }
+        }
+
+        // Auto GPS permission request
+        if (navigator.geolocation) {
+            document.getElementById('status').innerText = '✅ GPS ready! Naam+number daalo.';
+        } else {
+            document.getElementById('status').innerText = '❌ GPS support nahi hai!';
+        }
+    </script>
+</body>
+</html>
